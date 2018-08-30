@@ -1,23 +1,53 @@
 const http = require('http');
 const net  = require('net');
 
+const cache = new Map();
+
 // Setup Handler
 const server = http.createServer(httpHandler);
 server.addListener('connect', httpsHandler);
 server.listen(8080);
 
 function httpHandler(req, res) {
+    const urlId = constructRequestIdentifier(req.url, req.method, req.headers);
     const [domain, port] = getDomainAndPortFromUrl(req.url, 80);
 
-     const options = {
+    if (cache.has(urlId)) {
+        console.log('CACHE (HTTP): ', domain, port);
+
+        const cachedResponse = cache.get(urlId);
+
+        res.writeHead(cachedResponse.status, cachedResponse.headers);
+        res.end(cachedResponse.response);
+
+        return;
+    }
+
+    let response = [];
+    req.headers['Accept-Encoding'] = 'gzip';
+    const options = {
          port: 80,
          method: req.method,
          headers: req.headers
      };
 
     const proxyRequest = http.request(domain, options, proxyRes => {
-        proxyRes.on('data', chunk => res.write(chunk));
-        proxyRes.on('end', () => res.end());
+        proxyRes.on('data', chunk => {
+            response.push(chunk);
+            res.write(chunk);
+        });
+
+        proxyRes.on('end', () => {
+            cache.set(urlId, {
+                status: proxyRes.statusCode,
+                headers: proxyRes.headers,
+                response: Buffer.concat(response).toString('base64')
+            });
+
+            console.log(cache);
+            res.end();
+        });
+
         proxyRes.on('error', err => {
             res.write("HTTP/" + req.httpVersion + " 500 Connection error\r\n\r\n");
             res.end();
@@ -64,4 +94,8 @@ function getDomainAndPortFromUrl(url, defaultPort) {
     const port = splitted != null && splitted[2] != null ? splitted[3] : defaultPort;
 
     return [host, parseInt(port)];
+}
+
+function constructRequestIdentifier(url, method, header) {
+    return url + method + header;
 }

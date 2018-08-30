@@ -1,0 +1,19 @@
+{
+  "name": "simple-proxy",
+  "version": "1.0.0",
+  "description": "A damn simple proxy server for mocking requests.",
+  "main": "app.js",
+  "scripts": {
+      "start": "node app"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AravindVasudev/simple-proxy.git"
+  },
+  "author": "AravindVasudev",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/AravindVasudev/simple-proxy/issues"
+  },
+  "homepage": "https://github.com/AravindVasudev/simple-proxy#readme"
+}

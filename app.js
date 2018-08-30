@@ -5,7 +5,7 @@ const cache = new Map();
 
 // Setup Handler
 const server = http.createServer(httpHandler);
-server.addListener('connect', httpsHandler);
+server.on('connect', httpsHandler);
 server.listen(8080);
 
 function httpHandler(req, res) {
@@ -43,8 +43,7 @@ function httpHandler(req, res) {
                 headers: proxyRes.headers,
                 response: Buffer.concat(response).toString('base64')
             });
-
-            console.log(cache);
+            
             res.end();
         });
 
@@ -64,8 +63,18 @@ function httpHandler(req, res) {
 }
 
 function httpsHandler(req, res) {
+    const urlId = constructRequestIdentifier(req.url, req.method, req.headers);
     const [domain, port] = getDomainAndPortFromUrl(req.url, 80);
+
+    if (cache.has(urlId)) {
+        console.log('CACHE (HTTPS): ', domain, port);
+        res.end(cache.get(urlId).response);
+
+        return;
+    }
+
     const proxySocket = new net.Socket();
+    let response = [];
 
     console.log('PROXY: ', domain, port);
 
@@ -73,8 +82,16 @@ function httpsHandler(req, res) {
         res.write("HTTP/" + req.httpVersion + " 200 Connection established\r\n\r\n");
     });
 
-    proxySocket.on('data', chunk => res.write(chunk));
-    proxySocket.on('end', () => res.end());
+    proxySocket.on('data', chunk => {
+        response.push(chunk);
+        res.write(chunk);
+    });
+
+    proxySocket.on('end', () => {
+        cache.set(urlId, Buffer.concat(response).toString('base64'));
+        res.end();
+    });
+
     proxySocket.on('error', err => {
         res.write("HTTP/" + req.httpVersion + " 500 Connection error\r\n\r\n");
         res.end();
@@ -96,6 +113,7 @@ function getDomainAndPortFromUrl(url, defaultPort) {
     return [host, parseInt(port)];
 }
 
+// Creates unique identifier for a request
 function constructRequestIdentifier(url, method, header) {
     return url + method + header;
 }

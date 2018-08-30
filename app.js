@@ -9,9 +9,11 @@ server.on('connect', httpsHandler);
 server.listen(8080);
 
 function httpHandler(req, res) {
+    // Unique Id for request
     const urlId = constructRequestIdentifier(req.url, req.method, req.headers);
     const [domain, port] = getDomainAndPortFromUrl(req.url, 80);
 
+    // if cached, respond from cache
     if (cache.has(urlId)) {
         console.log('CACHE (HTTP): ', domain, port);
 
@@ -23,49 +25,52 @@ function httpHandler(req, res) {
         return;
     }
 
-    let response = [];
-    req.headers['Accept-Encoding'] = 'gzip';
+    // Send HTTP request using original request and cache it
+    let tempResponseStore = []; // stores response for caching
+    req.headers['Accept-Encoding'] = 'gzip'; // enables to accept gzip response
     const options = {
          port: 80,
          method: req.method,
          headers: req.headers
      };
 
-    const proxyRequest = http.request(domain, options, proxyRes => {
-        proxyRes.on('data', chunk => {
-            response.push(chunk);
+    const proxyRequest = http.request(domain, options, proxyResponse => {
+        proxyResponse.on('data', chunk => {
+            tempResponseStore.push(chunk);
             res.write(chunk);
         });
 
-        proxyRes.on('end', () => {
+        proxyResponse.on('end', () => {
             cache.set(urlId, {
-                status: proxyRes.statusCode,
-                headers: proxyRes.headers,
-                response: Buffer.concat(response).toString('base64')
+                status: proxyResponse.statusCode,
+                headers: proxyResponse.headers,
+                response: Buffer.concat(tempResponseStore).toString('base64')
             });
             
             res.end();
         });
 
-        proxyRes.on('error', err => {
+        proxyResponse.on('error', err => {
             res.write("HTTP/" + req.httpVersion + " 500 Connection error\r\n\r\n");
             res.end();
         });
 
-        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        res.writeHead(proxyResponse.statusCode, proxyResponse.headers);
     });
 
     req.on('data', chunk => proxyRequest.write(chunk));
     req.on('error', err => proxyRequest.end());
     req.on('end', () => proxyRequest.end());
 
-    console.log('PROXY: ', domain, port)
+    console.log('PROXY (HTTP): ', domain, port);
 }
 
 function httpsHandler(req, res) {
+    // Unique Id for request
     const urlId = constructRequestIdentifier(req.url, req.method, req.headers);
     const [domain, port] = getDomainAndPortFromUrl(req.url, 80);
 
+    // if cached, respond from cache
     if (cache.has(urlId)) {
         console.log('CACHE (HTTPS): ', domain, port);
         res.end(cache.get(urlId).response);
@@ -73,10 +78,9 @@ function httpsHandler(req, res) {
         return;
     }
 
+    // Connect user's request to server using a socket
     const proxySocket = new net.Socket();
     let response = [];
-
-    console.log('PROXY: ', domain, port);
 
     proxySocket.connect(port, domain, () => {
         res.write("HTTP/" + req.httpVersion + " 200 Connection established\r\n\r\n");
@@ -100,6 +104,8 @@ function httpsHandler(req, res) {
     res.on('data', chunk => proxySocket.write(chunk));
     res.on('end', () => proxySocket.end());
     res.on('error', () => proxySocket.end());
+
+    console.log('PROXY (HTTPS): ', domain, port);
 }
 
 // Splits port number from url
